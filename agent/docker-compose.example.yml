@@ -1,0 +1,19 @@
+# Example: run the agent with control plane at host.docker.internal:4242
+# Copy to docker-compose.yml and set CONNECTOR_TOKEN (from backend after creating a connector).
+
+version: '3.8'
+services:
+  agent:
+    build: .
+    environment:
+      CONTROL_PLANE_URL: http://host.docker.internal:4242
+      CONNECTOR_TOKEN: "${CONNECTOR_TOKEN}"   # From backend: POST /api/app/connectors then use returned token
+      CONNECTOR_ID: "${CONNECTOR_ID}"         # Connector UUID from backend
+      DB_TYPE: postgres
+      DB_URL: "${DB_URL}"                      # e.g. postgresql://user:pass@host.docker.internal:5432/db
+      DRY_RUN: "1"
+      POLL_INTERVAL_HOURS: "24"
+      # Optional: DROP_REQUESTS_FILE: /data/requests.json
+    # volumes:
+    #   - ./data:/data
+    restart: unless-stopped
