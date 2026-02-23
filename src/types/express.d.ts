@@ -19,6 +19,7 @@ declare global {
     interface Request {
       user?: AuthUser
       connector?: ConnectorContext
+      correlationId?: string
     }
   }
 }

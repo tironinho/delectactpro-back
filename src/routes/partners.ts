@@ -30,6 +30,12 @@ export function createPartnersRouter(db: DB): Router {
     escalationEmail: z.string().email().optional()
   })
 
+  const targetSchema = z.object({
+    partnerId: z.string().uuid(),
+    targetType: z.enum(['connector', 'customer_api']),
+    targetId: z.string().uuid()
+  })
+
   router.get('/', requireAuth, (req, res) => {
     const orgId = req.user!.org_id
     const rows = db.prepare(
@@ -230,6 +236,59 @@ export function createPartnersRouter(db: DB): Router {
     const orgId = req.user!.org_id
     const id = req.params.id
     const r = db.prepare('DELETE FROM cascade_policies WHERE id = ? AND org_id = ?').run(id, orgId)
+    if (r.changes === 0) return res.status(404).json({ error: 'Not found' })
+    return res.json({ ok: true })
+  })
+
+  // Partner targets (generic: connector | customer_api)
+  router.get('/targets', requireAuth, (req, res) => {
+    const orgId = req.user!.org_id
+    const rows = db.prepare(`
+      SELECT id, org_id, partner_id, target_type, target_id, created_at
+      FROM partner_targets WHERE org_id = ? ORDER BY created_at DESC
+    `).all(orgId) as Array<{ id: string; org_id: string; partner_id: string; target_type: string; target_id: string; created_at: string }>
+    return res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        orgId: r.org_id,
+        partnerId: r.partner_id,
+        targetType: r.target_type,
+        targetId: r.target_id,
+        createdAt: r.created_at
+      }))
+    })
+  })
+
+  router.post('/targets', requireAuth, requireRole('OWNER', 'ADMIN'), (req, res) => {
+    const parsed = targetSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input', issues: parsed.error.issues })
+    const orgId = req.user!.org_id
+    const id = uuid()
+    const now = nowIso()
+    try {
+      db.prepare(`
+        INSERT INTO partner_targets (id, org_id, partner_id, target_type, target_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(id, orgId, parsed.data.partnerId, parsed.data.targetType, parsed.data.targetId, now)
+    } catch (e: unknown) {
+      if (String((e as { message?: string })?.message).includes('FOREIGN KEY')) return res.status(400).json({ error: 'Partner not found' })
+      if (String((e as { message?: string })?.message).includes('UNIQUE')) return res.status(409).json({ error: 'Target already linked' })
+      throw e
+    }
+    return res.status(201).json({
+      id,
+      orgId,
+      partnerId: parsed.data.partnerId,
+      targetType: parsed.data.targetType,
+      targetId: parsed.data.targetId,
+      createdAt: now
+    })
+  })
+
+  router.delete('/targets/:id', requireAuth, requireRole('OWNER', 'ADMIN'), (req, res) => {
+    const orgId = req.user!.org_id
+    const id = req.params.id
+    const r = db.prepare('DELETE FROM partner_targets WHERE id = ? AND org_id = ?').run(id, orgId)
     if (r.changes === 0) return res.status(404).json({ error: 'Not found' })
     return res.json({ ok: true })
   })

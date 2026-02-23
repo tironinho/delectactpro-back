@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import type { DB } from '../db.js'
 import { uuid, nowIso, isHex64 } from '../util.js'
-import { requireAuth } from '../auth.js'
+import { requireAuth, requireRole } from '../auth.js'
+import { dispatchTest } from './cascade.js'
 
 /** App-scoped DSAR: create deletion requests (hashes only); org from JWT. */
 export function createDsarRouter(db: DB): Router {
@@ -89,6 +90,18 @@ export function createDsarRouter(db: DB): Router {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(orgId, id, nowIso(), type.slice(0, 60), actor?.slice(0, 80) ?? req.user!.id, details ? JSON.stringify(details).slice(0, 100_000) : null)
     return res.json({ ok: true })
+  })
+
+  router.post('/requests/:id/dispatch-cascade-test', requireAuth, requireRole('OWNER', 'ADMIN'), (req, res) => {
+    const orgId = req.user!.org_id
+    const requestId = req.params.id
+    const reqRow = db.prepare('SELECT id FROM deletion_requests WHERE id = ? AND org_id = ?').get(requestId, orgId)
+    if (!reqRow) return res.status(404).json({ error: 'Request not found' })
+    const result = dispatchTest(db, orgId, requestId, req.user!.id)
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error })
+    }
+    return res.json({ ok: true, tasksCreated: result.tasksCreated })
   })
 
   return router
